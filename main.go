@@ -24,9 +24,9 @@ type InstaData struct {
 }
 
 var (
-	fallowesCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "instagram_fallowers_count",
-		Help: "fallowes count for give account",
+	followersCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "instagram_followers_count",
+		Help: "followers count for give account",
 	},
 		[]string{"account"},
 	)
@@ -88,7 +88,7 @@ func main() {
 
 	log.Println("Collecting data for ", *userName)
 	log.Println("Server listen", *addr)
-	prometheus.MustRegister(fallowesCount, likesCount, commentsCount)
+	prometheus.MustRegister(followersCount, likesCount, commentsCount)
 
 	insta, err := goinsta.Import("~/.goinsta2")
 	if err != nil {
@@ -109,7 +109,7 @@ func main() {
 			log.Println("Error getting user", err)
 		}
 
-		fallowesCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
+		followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
 
 		media := user.Feed()
 		media.Next()
