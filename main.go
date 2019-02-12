@@ -102,11 +102,13 @@ func main() {
 	maxItems := 5
 	//lock := sync.RWMutex{}
 	//collectedData := make(map[string]MediaData)
+	errorCounter := 0
 
 	setInterval(func() {
 		user, err := insta.Profiles.ByName(*userName)
 		if err != nil {
 			log.Println("Error getting user", err)
+			errorCounter++
 		}
 
 		followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
@@ -116,13 +118,12 @@ func main() {
 		i := 0
 		for _, item := range media.Items {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
-			commentsCount.WithLabelValues(item.Code).Set(float64(item.Likes))
+			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
 			//lock.Lock()
 			//collectedData[item.Code] = MediaData{item.Likes, item.CommentCount}
 			//lock.Unlock()
-			fmt.Println(item.Code)
+			fmt.Println(item.Code, item.Likes, item.CommentCount)
 			i++
-			fmt.Println(i, maxItems)
 			if i > maxItems {
 				break
 			}
@@ -130,9 +131,14 @@ func main() {
 		err = user.Sync()
 		if err != nil {
 			log.Println("Sync error", err)
+			errorCounter++
 		}
 
-	}, 5)
+		if errorCounter > 4 {
+			errorCounter = 0
+		}
+
+	}, 5 + errorCounter)
 
 	insta.Export("~/.goinsta")
 
