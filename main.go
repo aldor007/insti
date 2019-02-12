@@ -3,19 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	goinsta "github.com/ahmdrz/goinsta.v2"
+	"github.com/ahmdrz/goinsta"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"os"
 	"sync"
-	"time"
-
-	"flag"
-	"github.com/labstack/gommon/log"
-	"github.com/prometheus/client_golang/prometheus"
-	"net/http"
-	"sync"
+	"log"
 	"time"
 )
 
@@ -84,7 +78,7 @@ func main() {
 	userName := flag.String("user", "", "User name to observe")
 	flag.Parse()
 
-	if userName == nil {
+	if userName == nil || *userName == "" {
 		panic("Missing required paramter")
 	}
 
@@ -92,6 +86,8 @@ func main() {
 		panic("Missing env variables")
 	}
 
+	log.Println("Collecting data for ", *userName)
+	log.Println("Server listen", *addr)
 	prometheus.MustRegister(fallowesCount, likesCount, commentsCount)
 
 	insta, err := goinsta.Import("~/.goinsta2")
@@ -110,7 +106,7 @@ func main() {
 	setInterval(func() {
 		user, err := insta.Profiles.ByName(*userName)
 		if err != nil {
-			log.Error("Error getting user", err)
+			log.Println("Error getting user", err)
 		}
 
 		fallowesCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
@@ -133,7 +129,7 @@ func main() {
 		}
 		err = user.Sync()
 		if err != nil {
-			log.Error("Sync error", err)
+			log.Println("Sync error", err)
 		}
 
 	}, 5)
