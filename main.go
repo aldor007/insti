@@ -118,6 +118,7 @@ func main() {
 			panic(err)
 		}
 	}
+
 	csvFile := csv.NewWriter(file)
 
 	setInterval(func() {
@@ -154,6 +155,7 @@ func main() {
 		}
 
 		csvFile.Flush()
+		file.Sync()
 
 	}, 5 + errorCounter)
 
