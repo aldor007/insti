@@ -11,6 +11,7 @@ import (
 	"sync"
 	"log"
 	"time"
+	"encoding/csv"
 )
 
 type MediaData struct {
@@ -31,7 +32,7 @@ var (
 		[]string{"account"},
 	)
 
-	errorsMonitoring = prometheus.NewCounter(prometheus.Counter{
+	errorsMonitoring = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "instagram_errors_count",
 		Help: "instrgram API errors count",
 	})
@@ -81,10 +82,11 @@ func setInterval(someFunc func(), minutes int) chan bool {
 func main() {
 	addr := flag.String("listen", ":8080", "The address to listen on for HTTP requests.")
 	userName := flag.String("user", "", "User name to observe")
+	filePath := flag.String("path", "", "CSV file path")
 	flag.Parse()
 
 	if userName == nil || *userName == "" {
-		panic("Missing required paramter")
+		panic("Missing required parameter")
 	}
 
 	if os.Getenv("INSTA_USERNAME") == "" || os.Getenv("INSTA_PASSWORD") == "" {
@@ -108,8 +110,15 @@ func main() {
 	//collectedData := make(map[string]MediaData)
 	errorCounter := 0
 
+	file, err := os.Open(*filePath)
+	if err != nil {
+		panic(err)
+	}
+	csvFile := csv.NewWriter(file)
+
 	setInterval(func() {
 		user, err := insta.Profiles.ByName(*userName)
+
 		if err != nil {
 			log.Println("Error getting user", err)
 			errorsMonitoring.Inc()
@@ -118,12 +127,13 @@ func main() {
 		}
 
 		followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
-
 		media := user.Feed()
 		media.Next()
+		timestamp := time.Now().Format("U")
 		for _, item := range media.Items {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
+			csvFile.Write([]string{timestamp, string(item.Code), string(item.Likes), string(item.CommentCount), string(user.FollowerCount)})
 			//lock.Lock()
 			//collectedData[item.Code] = MediaData{item.Likes, item.CommentCount}
 			//lock.Unlock()
@@ -138,6 +148,8 @@ func main() {
 		if errorCounter > 4 {
 			errorCounter = 0
 		}
+
+		file.Sync()
 
 	}, 5 + errorCounter)
 
