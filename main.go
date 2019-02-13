@@ -155,7 +155,10 @@ func main() {
 		}
 
 		csvFile.Flush()
-		file.Sync()
+		err = file.Sync()
+		if err != nil {
+			log.Println("Error", err)
+		}
 
 	}, 5 + errorCounter)
 
