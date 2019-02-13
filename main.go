@@ -31,6 +31,11 @@ var (
 		[]string{"account"},
 	)
 
+	errorsMonitoring = prometheus.NewCounter(prometheus.Counter{
+		Name: "instagram_errors_count",
+		Help: "instrgram API errors count",
+	})
+
 	likesCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "instagram_likes_count",
 		Help: "likes count for given image",
@@ -88,7 +93,7 @@ func main() {
 
 	log.Println("Collecting data for ", *userName)
 	log.Println("Server listen", *addr)
-	prometheus.MustRegister(followersCount, likesCount, commentsCount)
+	prometheus.MustRegister(followersCount, likesCount, commentsCount, errorsMonitoring)
 
 	insta, err := goinsta.Import("~/.goinsta2")
 	if err != nil {
@@ -99,7 +104,6 @@ func main() {
 		fmt.Println("login error", err)
 		return
 	}
-	maxItems := 5
 	//lock := sync.RWMutex{}
 	//collectedData := make(map[string]MediaData)
 	errorCounter := 0
@@ -108,14 +112,15 @@ func main() {
 		user, err := insta.Profiles.ByName(*userName)
 		if err != nil {
 			log.Println("Error getting user", err)
+			errorsMonitoring.Inc()
 			errorCounter++
+			return
 		}
 
 		followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
 
 		media := user.Feed()
 		media.Next()
-		i := 0
 		for _, item := range media.Items {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
@@ -123,10 +128,6 @@ func main() {
 			//collectedData[item.Code] = MediaData{item.Likes, item.CommentCount}
 			//lock.Unlock()
 			fmt.Println(item.Code, item.Likes, item.CommentCount)
-			i++
-			if i > maxItems {
-				break
-			}
 		}
 		err = user.Sync()
 		if err != nil {
