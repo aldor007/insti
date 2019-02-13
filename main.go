@@ -148,7 +148,10 @@ func main() {
 		for _, item := range media.Items {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
-			csvFile.Write([]string{timestamp, string(item.Code), string(item.Likes), string(item.CommentCount), string(user.FollowerCount)})
+			err = csvFile.Write([]string{timestamp, string(item.Code), string(item.Likes), string(item.CommentCount), string(user.FollowerCount)})
+			if err != nil {
+				log.Println("Error wrint to csv", err)
+			}
 			//lock.Lock()
 			//collectedData[item.Code] = MediaData{item.Likes, item.CommentCount}
 			//lock.Unlock()
