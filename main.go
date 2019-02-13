@@ -82,7 +82,7 @@ func setInterval(someFunc func(), minutes int) chan bool {
 func main() {
 	addr := flag.String("listen", ":8080", "The address to listen on for HTTP requests.")
 	userName := flag.String("user", "", "User name to observe")
-	filePath := flag.String("path", "", "CSV file path")
+	filePath := flag.String("csvPath", "", "CSV file path")
 	flag.Parse()
 
 	if userName == nil || *userName == "" {
@@ -111,8 +111,12 @@ func main() {
 	errorCounter := 0
 
 	file, err := os.Open(*filePath)
+
 	if err != nil {
-		panic(err)
+		file, err = os.Create(*filePath)
+		if err != nil  {
+			panic(err)
+		}
 	}
 	csvFile := csv.NewWriter(file)
 
