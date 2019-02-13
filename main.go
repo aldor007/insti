@@ -118,10 +118,20 @@ func main() {
 			panic(err)
 		}
 	}
-
-	csvFile := csv.NewWriter(file)
+	file.Close()
 
 	setInterval(func() {
+		file, err := os.Open(*filePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				file, err = os.Create(*filePath)
+				if err != nil {
+					panic(err)
+				}
+			}
+		}
+		defer file.Close()
+		csvFile := csv.NewWriter(file)
 		user, err := insta.Profiles.ByName(*userName)
 
 		if err != nil {
