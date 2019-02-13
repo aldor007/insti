@@ -153,7 +153,7 @@ func main() {
 			errorCounter = 0
 		}
 
-		file.Sync()
+		csvFile.Flush()
 
 	}, 5 + errorCounter)
 
