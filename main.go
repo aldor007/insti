@@ -12,6 +12,7 @@ import (
 	"log"
 	"time"
 	"encoding/csv"
+	"strconv"
 )
 
 type MediaData struct {
@@ -110,7 +111,7 @@ func main() {
 	//collectedData := make(map[string]MediaData)
 	errorCounter := 0
 
-	file, err := os.Open(*filePath)
+	file, err := os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
 
 	if err != nil {
 		file, err = os.Create(*filePath)
@@ -118,20 +119,9 @@ func main() {
 			panic(err)
 		}
 	}
-	file.Close()
+	csvFile := csv.NewWriter(file)
 
 	setInterval(func() {
-		file, err := os.Open(*filePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				file, err = os.Create(*filePath)
-				if err != nil {
-					panic(err)
-				}
-			}
-		}
-		defer file.Close()
-		csvFile := csv.NewWriter(file)
 		user, err := insta.Profiles.ByName(*userName)
 
 		if err != nil {
@@ -148,9 +138,18 @@ func main() {
 		for _, item := range media.Items {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
-			err = csvFile.Write([]string{timestamp, string(item.Code), string(item.Likes), string(item.CommentCount), string(user.FollowerCount)})
+			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount)})
 			if err != nil {
 				log.Println("Error wrint to csv", err)
+				file, err = os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
+
+				if err != nil {
+					file, err = os.Create(*filePath)
+					if err != nil  {
+						panic(err)
+					}
+				}
+				csvFile = csv.NewWriter(file)
 			}
 			//lock.Lock()
 			//collectedData[item.Code] = MediaData{item.Likes, item.CommentCount}
@@ -168,7 +167,6 @@ func main() {
 		}
 
 		csvFile.Flush()
-		err = file.Sync()
 		if err != nil {
 			log.Println("Error", err)
 		}
