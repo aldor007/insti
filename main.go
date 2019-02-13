@@ -13,6 +13,7 @@ import (
 	"time"
 	"encoding/csv"
 	"strconv"
+	"regexp"
 )
 
 type MediaData struct {
@@ -51,6 +52,8 @@ var (
 	},
 		[]string{"imageId"},
 	)
+	tagRegexp = regexp.MustCompile("#[a-z_]+")
+
 )
 
 func setInterval(someFunc func(), minutes int) chan bool {
@@ -134,11 +137,12 @@ func main() {
 		followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
 		media := user.Feed()
 		media.Next()
-		timestamp := time.Now().Format("U")
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 		for _, item := range media.Items {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
-			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount)})
+			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount),
+			strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1)))})
 			if err != nil {
 				log.Println("Error wrint to csv", err)
 				file, err = os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
