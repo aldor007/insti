@@ -142,9 +142,9 @@ func main() {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
 			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount),
-			strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1)))})
+			strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1))), strconv.Itoa(int(item.TakenAt))})
 			if err != nil {
-				log.Println("Error wrint to csv", err)
+				log.Println("Error wwriting to csv", err)
 				file, err = os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
 
 				if err != nil {
