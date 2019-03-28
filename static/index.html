@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<style type="text/css">
+		img {
+		  max-width: 100%; /* This rule is very important, please do not ignore this! */
+		}
+		.image_container{
+			width:600px;
+			height: 500px;	
+		}
+	</style>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.css" />
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.js"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.min.css" />
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.min.js"></script>
+	<title>Schedule instagram post</title>
+	<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css" />
+	<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
+</head>
+<
+<body>
+	
+	<input type="file" name="image" id="image" onchange="readURL(this);"/>
+	<div class="image_container">
+		<img id="insta" src="#" alt="your image" />
+	</div>
+	<p>Publish date: <input type="text" id="datepicker"></p>
+	<textarea id="caption" rows="4" cols="50">
+	</textarea>
+
+
+	<div id="cropped_result"></div>
+	<button id="crop_button">Crop</button>
+
+
+
+	<script type="text/javascript" defer>
+		$( function() {
+			$( "#datepicker" ).datetimepicker();
+		} );
+		function readURL(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function (e) {
+                    $('#insta').attr('src', e.target.result)
+                };
+                reader.readAsDataURL(input.files[0]);
+                setTimeout(initCropper, 100);
+            }
+        }
+	    function initCropper(){
+	    	console.log("Came here")
+	    	var image = document.getElementById('insta');
+			var cropper = new Cropper(image, {
+			  aspectRatio: 1 / 1,
+			  crop: function(e) {
+
+			  }
+			});
+
+			// On crop button clicked
+			document.getElementById('crop_button').addEventListener('click', function() {
+				var imgurl = cropper.getCroppedCanvas().toDataURL();
+				var img = document.createElement("img");
+				img.src = imgurl;
+				document.getElementById("cropped_result").appendChild(img);
+
+
+				cropper.getCroppedCanvas().toBlob(function (blob) {
+					var formData = new FormData();
+					formData.append('croppedImage', blob);
+					formData.append('publishDate', $("#datepicker").datepicker('getDate'));
+					formData.append('captopn', $('caption').val());
+					// Use `jQuery.ajax` method
+					$.ajax('/post', {
+						method: "POST",
+						data: formData,
+						processData: false,
+						contentType: false,
+						success: function () {
+							console.log('Upload success');
+						},
+						error: function () {
+							console.log('Upload error');
+						}
+					});
+				});
+			});
+
+	    }
+	</script>
+</body>
+</html>

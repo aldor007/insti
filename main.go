@@ -144,7 +144,7 @@ func main() {
 			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount),
 			strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1))), strconv.Itoa(int(item.TakenAt))})
 			if err != nil {
-				log.Println("Error wwriting to csv", err)
+				log.Println("Error writing to csv", err)
 				file, err = os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
 
 				if err != nil {
@@ -180,6 +180,9 @@ func main() {
 	insta.Export("~/.goinsta")
 
 	flag.Parse()
+	fs := http.FileServer(http.Dir("static"))
+
 	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/", fs)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
