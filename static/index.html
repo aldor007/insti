@@ -21,10 +21,13 @@
 	<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
 	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
-</head>
-<
 <body>
-	
+
+<div id="toggle-aspect-ratio">
+	<span class="btn" data-value="NaN">Freeform</span>
+	<span class="btn" data-value="1">1.1</span>
+	<span class="btn" data-value="0.8">4/5</span>
+</div>
 	<input type="file" name="image" id="image" onchange="readURL(this);"/>
 	<div class="image_container">
 		<img id="insta" src="#" alt="your image" />
@@ -40,8 +43,34 @@
 
 
 	<script type="text/javascript" defer>
+		function dataURItoBlob(dataURI) {
+			// convert base64/URLEncoded data component to raw binary data held in a string
+			var byteString;
+			if (dataURI.split(',')[0].indexOf('base64') >= 0)
+				byteString = atob(dataURI.split(',')[1]);
+			else
+				byteString = unescape(dataURI.split(',')[1]);
+
+			// separate out the mime component
+			var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+			// write the bytes of the string to a typed array
+			var ia = new Uint8Array(byteString.length);
+			for (var i = 0; i < byteString.length; i++) {
+				ia[i] = byteString.charCodeAt(i);
+			}
+
+			return new Blob([ia], {type:mimeString});
+		}
+
+
 		$( function() {
-			$( "#datepicker" ).datetimepicker();
+			$( "#datepicker" ).datetimepicker({
+				format:'DD-MM-YYYY HH:mm:ss',
+				value: new Date()
+
+
+			});
 		} );
 		function readURL(input) {
             if (input.files && input.files[0]) {
@@ -56,39 +85,50 @@
 	    function initCropper(){
 	    	console.log("Came here")
 	    	var image = document.getElementById('insta');
-			var cropper = new Cropper(image, {
-			  aspectRatio: 1 / 1,
-			  crop: function(e) {
-
-			  }
+			var options = {
+				aspectRatio: 4 / 5
+			};
+			var cropper = new Cropper(image, options);
+			// toggle aspect ratio after initialization
+			$(document).on('click', '#toggle-aspect-ratio .btn', function () {
+				options.aspectRatio = $(this).attr('data-value');
+				cropper.destroy();
+				cropper = new Cropper(image, options);
 			});
 
 			// On crop button clicked
 			document.getElementById('crop_button').addEventListener('click', function() {
-				var imgurl = cropper.getCroppedCanvas().toDataURL();
+				var imgurl = cropper.getCroppedCanvas().toDataURL("image/jpeg");
 				var img = document.createElement("img");
 				img.src = imgurl;
 				document.getElementById("cropped_result").appendChild(img);
 
 
-				cropper.getCroppedCanvas().toBlob(function (blob) {
+				var blob = dataURItoBlob(imgurl);
+
+				console.info('blog type - ', blob.type);
 					var formData = new FormData();
-					formData.append('croppedImage', blob);
-					formData.append('publishDate', $("#datepicker").datepicker('getDate'));
-					formData.append('captopn', $('caption').val());
+					formData.append('image', blob);
+					var dateObject = $("#datepicker").datepicker("getDate");
+					var dateString = $.datepicker.formatDate("@", dateObject);
+					formData.append('publishDate', dateString);
+					formData.append('caption', $('#caption').val());
+					console.info(formData.get("image"));
 					// Use `jQuery.ajax` method
 					$.ajax('/post', {
 						method: "POST",
 						data: formData,
 						processData: false,
 						contentType: false,
+						cache: false,
 						success: function () {
+
 							console.log('Upload success');
 						},
 						error: function () {
 							console.log('Upload error');
 						}
-					});
+					// });
 				});
 			});
 

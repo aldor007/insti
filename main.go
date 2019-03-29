@@ -1,19 +1,21 @@
 package main
 
 import (
+	"bytes"
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"github.com/ahmdrz/goinsta"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
-	"sync"
-	"log"
-	"time"
-	"encoding/csv"
-	"strconv"
 	"regexp"
+	"strconv"
+	"sync"
+	"time"
 )
 
 type MediaData struct {
@@ -24,6 +26,59 @@ type MediaData struct {
 type InstaData struct {
 	data map[string]MediaData
 	lock sync.RWMutex
+}
+
+var insta *goinsta.Instagram
+
+func handlePostData(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(32 << 20)
+
+	if err != nil {
+		log.Println("Error parsing form", err)
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	publishDate, err := strconv.ParseInt(r.PostFormValue("publishDate"), 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	publishDate = publishDate / 1000
+	tm := time.Unix(publishDate, 0)
+	timer := time.NewTimer(tm.Sub(time.Now()))
+	fmt.Println("Run after", tm.Sub(time.Now()))
+	caption := r.PostFormValue("caption")
+	fmt.Println("caption",r.PostFormValue("caption"))
+	file, _, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "image upload error", http.StatusInternalServerError)
+		return
+	}
+	imageBuf, err := ioutil.ReadAll(file)
+
+	go func(buf []byte, caption  string) {
+		errorCounter := 0
+		for {
+			select {
+				case <-timer.C:
+					_, err = insta.UploadPhoto(bytes.NewReader(buf), caption, 100, 1)
+					if err != nil && errorCounter < 3 {
+						log.Println("image upload error", err)
+						timer = time.NewTimer(time.Minute * 2)
+						errorCounter++
+					} else {
+						fmt.Println("Published image")
+						return
+					}
+
+			default:
+
+			}
+		}
+
+	}(imageBuf, caption)
+	file.Close()
+
 }
 
 var (
@@ -100,8 +155,8 @@ func main() {
 	log.Println("Collecting data for ", *userName)
 	log.Println("Server listen", *addr)
 	prometheus.MustRegister(followersCount, likesCount, commentsCount, errorsMonitoring)
-
-	insta, err := goinsta.Import("~/.goinsta2")
+	var err error
+	insta, err = goinsta.Import("~/.goinsta2")
 	if err != nil {
 		insta = goinsta.New(os.Getenv("INSTA_USERNAME"), os.Getenv("INSTA_PASSWORD"))
 	}
@@ -183,6 +238,7 @@ func main() {
 	fs := http.FileServer(http.Dir("static"))
 
 	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/post", handlePostData)
 	http.Handle("/", fs)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
