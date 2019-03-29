@@ -59,8 +59,7 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 	go func(buf []byte, caption  string) {
 		errorCounter := 0
 		for {
-			select {
-				case <-timer.C:
+				<-timer.C
 					_, err = insta.UploadPhoto(bytes.NewReader(buf), caption, 100, 1)
 					if err != nil && errorCounter < 3 {
 						log.Println("image upload error", err)
@@ -71,9 +70,6 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 
-			default:
-
-			}
 		}
 
 	}(imageBuf, caption)
