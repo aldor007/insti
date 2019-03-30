@@ -39,10 +39,19 @@
 
 	<div id="cropped_result"></div>
 	<button id="crop_button">Crop</button>
+	<button id="upload_button">Upload</button>
+	<span id="info"></span>
 
 
 
 	<script type="text/javascript" defer>
+		var options = {
+			aspectRatio: 4 / 5,
+			fillColor: '#fff'
+
+		};
+		var cropper;
+
 		function dataURItoBlob(dataURI) {
 			// convert base64/URLEncoded data component to raw binary data held in a string
 			var byteString;
@@ -82,57 +91,73 @@
                 setTimeout(initCropper, 100);
             }
         }
+
+		$(document).on('click', '#toggle-aspect-ratio .btn', function () {
+			options.aspectRatio = $(this).attr('data-value');
+			cropper.destroy();
+			var image = document.getElementById('insta');
+			cropper = new Cropper(image, options);
+		});
+
 	    function initCropper(){
-	    	console.log("Came here")
 	    	var image = document.getElementById('insta');
-			var options = {
-				aspectRatio: 4 / 5
-			};
-			var cropper = new Cropper(image, options);
-			// toggle aspect ratio after initialization
-			$(document).on('click', '#toggle-aspect-ratio .btn', function () {
-				options.aspectRatio = $(this).attr('data-value');
+			if (cropper) {
 				cropper.destroy();
 				cropper = new Cropper(image, options);
-			});
 
+			}
+			cropper = new Cropper(image, options);
+			// toggle aspect ratio after initialization
 			// On crop button clicked
 			document.getElementById('crop_button').addEventListener('click', function() {
 				var imgurl = cropper.getCroppedCanvas().toDataURL("image/jpeg");
 				var img = document.createElement("img");
 				img.src = imgurl;
+
+				try {
+
+					document.getElementById("cropped_result").removeChild(img);
+				}catch (e) {
+
+				}
 				document.getElementById("cropped_result").appendChild(img);
 
 
-				var blob = dataURItoBlob(imgurl);
-
-				console.info('blog type - ', blob.type);
-					var formData = new FormData();
-					formData.append('image', blob);
-					var dateObject = $("#datepicker").datepicker("getDate");
-					var dateString = $.datepicker.formatDate("@", dateObject);
-					formData.append('publishDate', dateString);
-					formData.append('caption', $('#caption').val());
-					console.info(formData.get("image"));
-					// Use `jQuery.ajax` method
-					$.ajax('/post', {
-						method: "POST",
-						data: formData,
-						processData: false,
-						contentType: false,
-						cache: false,
-						success: function () {
-
-							console.log('Upload success');
-						},
-						error: function () {
-							console.log('Upload error');
-						}
-					// });
-				});
 			});
 
 	    }
+		document.getElementById('upload_button').addEventListener('click', upload);
+
+	    function upload() {
+			var imgurl = cropper.getCroppedCanvas().toDataURL("image/jpeg");
+			var blob = dataURItoBlob(imgurl);
+
+			var formData = new FormData();
+			formData.append('image', blob);
+			var dateObject = $("#datepicker").datepicker("getDate");
+			var dateString = $.datepicker.formatDate("@", dateObject);
+			formData.append('publishDate', dateString);
+			formData.append('caption', $('#caption').val());
+			console.info(formData.get("image"));
+			// Use `jQuery.ajax` method
+			$.ajax('/post', {
+				method: "POST",
+				data: formData,
+				processData: false,
+				contentType: false,
+				cache: false,
+				success: function () {
+
+					console.log('Upload success');
+					$('#info').text("Upload success");
+				},
+				error: function () {
+					console.log('Upload error');
+					$('#info').text("Upload error");
+				}
+				// });
+			});
+		}
 	</script>
 </body>
 </html>
