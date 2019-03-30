@@ -28,6 +28,16 @@ type InstaData struct {
 	lock sync.RWMutex
 }
 
+type InstaPost struct {
+	imageBuf []byte
+	publishDate time.Time
+	caption string
+	id string
+}
+
+var lock sync.RWMutex
+var schedule []InstaPost
+
 var insta *goinsta.Instagram
 
 func handlePostData(w http.ResponseWriter, r *http.Request) {
@@ -41,12 +51,15 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 
 	publishDate, err := strconv.ParseInt(r.PostFormValue("publishDate"), 10, 64)
 	if err != nil {
-		panic(err)
+		log.Println("Error parsing  publishDate", err)
+		http.Error(w, "Error parsing publishDate", http.StatusBadRequest)
+		return
 	}
+
 	publishDate = publishDate / 1000
 	tm := time.Unix(publishDate, 0)
 	timer := time.NewTimer(tm.Sub(time.Now()))
-	fmt.Println("Run after", tm.Sub(time.Now()))
+	log.Println("Run at ", tm, " after", tm.Sub(time.Now()))
 	caption := r.PostFormValue("caption")
 	fmt.Println("caption",r.PostFormValue("caption"))
 	file, _, err := r.FormFile("image")
@@ -66,7 +79,7 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 						timer = time.NewTimer(time.Minute * 2)
 						errorCounter++
 					} else {
-						fmt.Println("Published image")
+						log.Println("Published image")
 						return
 					}
 
@@ -161,8 +174,6 @@ func main() {
 		fmt.Println("login error", err)
 		return
 	}
-	//lock := sync.RWMutex{}
-	//collectedData := make(map[string]MediaData)
 	errorCounter := 0
 
 	file, err := os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
@@ -206,10 +217,6 @@ func main() {
 				}
 				csvFile = csv.NewWriter(file)
 			}
-			//lock.Lock()
-			//collectedData[item.Code] = MediaData{item.Likes, item.CommentCount}
-			//lock.Unlock()
-			fmt.Println(item.Code, item.Likes, item.CommentCount)
 		}
 		err = user.Sync()
 		if err != nil {
