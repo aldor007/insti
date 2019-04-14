@@ -10,4 +10,4 @@ the early stage of development (frontend required a lot of attention).
 
 
 ## Grafana dashboard
-<img src="https://raw.githubusercontent.com/aldor007/instagram-stats/master/doc/grafana.png">
+![grafana](doc/grafana.png?raw=true "Title")
