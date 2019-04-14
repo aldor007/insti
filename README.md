@@ -11,3 +11,9 @@ the early stage of development (frontend required a lot of attention).
 
 ## Grafana dashboard
 ![grafana](doc/grafana.png?raw=true "Title")
+
+## Example uage
+```
+$ INSTA_USERNAME='user' INSTA_PASSWORD='password'  go run main.go -user USER_TO_OBSERVE -csvPath insta.csv
+
+```
