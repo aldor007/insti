@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/ahmdrz/goinsta"
@@ -39,6 +40,55 @@ var lock sync.RWMutex
 var schedule []InstaPost
 
 var insta *goinsta.Instagram
+var  users map[string]*goinsta.Instagram
+
+func handleNewUser(w http.ResponseWriter, r *http.Request)  {
+	err := r.ParseForm()
+
+	if err != nil {
+		log.Println("Error parsing form", err)
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	login := r.FormValue("login")
+	password := r.FormValue("password")
+
+	if login == "" || password == "" {
+		log.Println("invalid data", login, password)
+		http.Error(w, "Invalid data", http.StatusBadRequest)
+		return
+
+	}
+
+	localInsta := goinsta.New(login, password)
+	if err := localInsta.Login(); err != nil {
+		log.Println("Error login to instagram", err)
+		http.Error(w, "Error login to instagram", http.StatusBadRequest)
+		return
+	}
+
+	users[login] = localInsta
+
+	fmt.Fprintf(w, "user " + login + " added to local db")
+}
+
+
+func handleUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		handleNewUser(w, r)
+		return
+	} else {
+		keys := make([]string, 0, len(users))
+		for k := range  users {
+			keys = append(keys, k)
+		}
+
+		w.Header().Set("content-type", "application/json")
+		d, _ := json.Marshal(keys)
+		w.Write(d)
+	}
+}
 
 func handlePostData(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm(32 << 20)
@@ -56,6 +106,8 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user := r.PostFormValue("user")
+
 	publishDate = publishDate / 1000
 	tm := time.Unix(publishDate, 0)
 	timer := time.NewTimer(tm.Sub(time.Now()))
@@ -68,12 +120,18 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	imageBuf, err := ioutil.ReadAll(file)
+	var userInsta *goinsta.Instagram
+	if user == "" {
+		userInsta = insta
+	} else {
 
-	go func(buf []byte, caption  string) {
+		userInsta = users[user]
+	}
+	go func(buf []byte, caption string, userInsta *goinsta.Instagram) {
 		errorCounter := 0
 		for {
 				<-timer.C
-					_, err = insta.UploadPhoto(bytes.NewReader(buf), caption, 100, 1)
+					_, err = userInsta.UploadPhoto(bytes.NewReader(buf), caption, 100, 1)
 					if err != nil && errorCounter < 3 {
 						log.Println("image upload error", err)
 						timer = time.NewTimer(time.Minute * 2)
@@ -85,7 +143,7 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 
 		}
 
-	}(imageBuf, caption)
+	}(imageBuf, caption, userInsta)
 	file.Close()
 
 }
@@ -152,6 +210,8 @@ func main() {
 	userName := flag.String("user", "", "User name to observe")
 	filePath := flag.String("csvPath", "", "CSV file path")
 	flag.Parse()
+
+	users = make(map[string]*goinsta.Instagram)
 
 	if userName == nil || *userName == "" {
 		panic("Missing required parameter")
@@ -242,6 +302,7 @@ func main() {
 
 	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("/post", handlePostData)
+	http.HandleFunc("/user", handleUser)
 	http.Handle("/", fs)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }

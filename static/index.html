@@ -11,8 +11,6 @@
 			height: 500px;	
 		}
 	</style>
-	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.css" />
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.js"></script>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.min.css" />
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.min.js"></script>
 	<title>Schedule instagram post</title>
@@ -21,6 +19,7 @@
 	<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
 	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jscolor/2.0.4/jscolor.min.js" integrity="sha256-CJWfUCeP3jLdUMVNUll6yQx37gh9AKmXTRxvRf7jzro=" crossorigin="anonymous"></script>
 <body>
 
 <div id="toggle-aspect-ratio">
@@ -33,18 +32,31 @@
 		<img id="insta" src="#" alt="your image" />
 	</div>
 	<p>Publish date: <input type="text" id="datepicker"></p>
-	<textarea id="caption" rows="4" cols="50">
-	</textarea>
+	<p>User  <select id="user">
+			<option value="">Default</option>
+		</select> <a href="/add.html">Add user</a></p>
+<p>Background color: <input class="jscolor" id="bgColor" value="fff"></p>
+	<textarea id="caption" rows="4" cols="50"></textarea>
 
 
 	<div id="cropped_result"></div>
 	<button id="crop_button">Crop</button>
-	<button id="upload_button">Upload</button>
+	<button id="upload_button" disabled>Upload</button>
 	<span id="info"></span>
 
 
 
 	<script type="text/javascript" defer>
+		$.ajax({
+			url:'/user',
+			type:'Get',
+			dataType: 'json',
+			success: function( json ) {
+				for (var i = 0; i < json.length; i++) {
+					$("#user").append(new Option(json[i], json[i]));
+				}
+			}
+		});
 		var options = {
 			aspectRatio: 4 / 5,
 			fillColor: '#fff'
@@ -110,18 +122,18 @@
 			// toggle aspect ratio after initialization
 			// On crop button clicked
 			document.getElementById('crop_button').addEventListener('click', function() {
-				var imgurl = cropper.getCroppedCanvas().toDataURL("image/jpeg");
+				var imgurl = cropper.getCroppedCanvas({ fillColor: '#' + $('#bgColor').val()}).toDataURL("image/jpeg");
 				var img = document.createElement("img");
 				img.src = imgurl;
 
 				try {
-
 					document.getElementById("cropped_result").removeChild(img);
 				}catch (e) {
 
 				}
 				document.getElementById("cropped_result").appendChild(img);
 
+				document.getElementById("upload_button").disabled = false;
 
 			});
 
@@ -138,6 +150,7 @@
 			var dateString = $.datepicker.formatDate("@", dateObject);
 			formData.append('publishDate', dateString);
 			formData.append('caption', $('#caption').val());
+			formData.append('user', $('#user option:selected').val());
 			console.info(formData.get("image"));
 			// Use `jQuery.ajax` method
 			$.ajax('/post', {
