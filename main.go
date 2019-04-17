@@ -2,13 +2,17 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/ahmdrz/goinsta"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -30,19 +34,76 @@ type InstaData struct {
 }
 
 type InstaPost struct {
-	imageBuf []byte
-	publishDate time.Time
-	caption string
-	id string
+	imageBuf    []byte
+	PublishDate time.Time `json:"publishDate"`
+	Caption     string    `json:"caption"`
+	ID          string    `json:"id"`
+	User        string    `json:"user"`
+}
+
+func (i *InstaPost) MarshalJSON() ([]byte, error) {
+	type Alias InstaPost
+	return json.Marshal(&struct {
+		*Alias
+		PublisDate string `json:"publishDate"`
+	}{
+		Alias:      (*Alias)(i),
+		PublisDate: i.PublishDate.Format(time.RFC1123),
+	})
+}
+
+type InstaSchedule struct {
+	schedule map[string]InstaPost
+	lock     sync.RWMutex
+}
+
+func NewInstaSchedule() *InstaSchedule {
+	s := InstaSchedule{}
+	s.schedule = make(map[string]InstaPost)
+	return &s
+}
+
+func (i *InstaSchedule) Add(post InstaPost) {
+	lock.Lock()
+	defer lock.Unlock()
+	h := md5.New()
+	h.Write(post.imageBuf)
+	post.ID = hex.EncodeToString(h.Sum(nil))
+	i.schedule[post.ID] = post
+}
+
+func (i *InstaSchedule) Remove(id string) {
+	lock.Lock()
+	defer lock.Unlock()
+	delete(i.schedule, id)
+}
+
+func (i *InstaSchedule) Get(id string) InstaPost {
+	lock.RLock()
+	defer lock.RUnlock()
+	return i.schedule[id]
+}
+
+func (i *InstaSchedule) GetAll() map[string]InstaPost {
+	lock.RLock()
+	defer lock.RUnlock()
+	return i.schedule
+}
+
+func (i *InstaSchedule) Has(id string) bool {
+	lock.RLock()
+	defer lock.RUnlock()
+	_, ok := i.schedule[id]
+	return ok
 }
 
 var lock sync.RWMutex
-var schedule []InstaPost
 
 var insta *goinsta.Instagram
-var  users map[string]*goinsta.Instagram
+var users map[string]*goinsta.Instagram
+var postSchedule *InstaSchedule
 
-func handleNewUser(w http.ResponseWriter, r *http.Request)  {
+func handleNewUser(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 
 	if err != nil {
@@ -70,9 +131,8 @@ func handleNewUser(w http.ResponseWriter, r *http.Request)  {
 
 	users[login] = localInsta
 
-	fmt.Fprintf(w, "user " + login + " added to local db")
+	fmt.Fprintf(w, "user "+login+" added to local db")
 }
-
 
 func handleUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
@@ -80,7 +140,7 @@ func handleUser(w http.ResponseWriter, r *http.Request) {
 		return
 	} else {
 		keys := make([]string, 0, len(users))
-		for k := range  users {
+		for k := range users {
 			keys = append(keys, k)
 		}
 
@@ -113,7 +173,6 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 	timer := time.NewTimer(tm.Sub(time.Now()))
 	log.Println("Run at ", tm, " after", tm.Sub(time.Now()))
 	caption := r.PostFormValue("caption")
-	fmt.Println("caption",r.PostFormValue("caption"))
 	file, _, err := r.FormFile("image")
 	if err != nil {
 		http.Error(w, "image upload error", http.StatusInternalServerError)
@@ -124,28 +183,74 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 	if user == "" {
 		userInsta = insta
 	} else {
-
-		userInsta = users[user]
+		var ok bool
+		userInsta, ok = users[user]
+		if !ok {
+			log.Println("Error unknown user", user)
+			http.Error(w, "Error unknown user", http.StatusBadRequest)
+			return
+		}
 	}
-	go func(buf []byte, caption string, userInsta *goinsta.Instagram) {
+	post := InstaPost{imageBuf: imageBuf, Caption: caption, User: user, PublishDate: tm}
+	postSchedule.Add(post)
+	go func(post InstaPost, userInsta *goinsta.Instagram) {
 		errorCounter := 0
+
 		for {
-				<-timer.C
-					_, err = userInsta.UploadPhoto(bytes.NewReader(buf), caption, 100, 1)
-					if err != nil && errorCounter < 3 {
-						log.Println("image upload error", err)
-						timer = time.NewTimer(time.Minute * 2)
-						errorCounter++
-					} else {
-						log.Println("Published image")
-						return
-					}
+			<-timer.C
+			if !postSchedule.Has(post.ID) {
+				return
+			}
+
+			_, err = userInsta.UploadPhoto(bytes.NewReader(post.imageBuf), caption, 100, 1)
+			if err != nil && errorCounter < 3 {
+				log.Println("image upload error", err)
+				timer = time.NewTimer(time.Minute * 2)
+				errorCounter++
+			} else {
+				log.Println("Published image")
+				postSchedule.Remove(post.ID)
+				return
+			}
 
 		}
 
-	}(imageBuf, caption, userInsta)
+	}(post, userInsta)
 	file.Close()
 
+}
+
+func handleGetSchedule(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("content-type", "application/json")
+	data := postSchedule.GetAll()
+	list := make([]InstaPost, 0)
+	for _, v := range data {
+		list = append(list, v)
+	}
+
+	jsonData := make(map[string][]InstaPost)
+	jsonData["data"] = list
+	d, _ := json.Marshal(jsonData)
+	w.Write(d)
+
+}
+
+func handleGetImage(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	post := postSchedule.Get(vars["id"])
+	if post.imageBuf == nil {
+		http.Error(w, "No image", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("content-type", "image/jpeg")
+	w.Write(post.imageBuf)
+}
+
+func handleRemovePost(_ http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	postSchedule.Remove(vars["id"])
 }
 
 var (
@@ -175,7 +280,6 @@ var (
 		[]string{"imageId"},
 	)
 	tagRegexp = regexp.MustCompile("#[a-z_]+")
-
 )
 
 func setInterval(someFunc func(), minutes int) chan bool {
@@ -212,6 +316,7 @@ func main() {
 	flag.Parse()
 
 	users = make(map[string]*goinsta.Instagram)
+	postSchedule = NewInstaSchedule()
 
 	if userName == nil || *userName == "" {
 		panic("Missing required parameter")
@@ -231,7 +336,7 @@ func main() {
 	}
 
 	if err := insta.Login(); err != nil {
-		fmt.Println("login error", err)
+		log.Println("login error", err)
 		return
 	}
 	errorCounter := 0
@@ -240,7 +345,7 @@ func main() {
 
 	if err != nil {
 		file, err = os.Create(*filePath)
-		if err != nil  {
+		if err != nil {
 			panic(err)
 		}
 	}
@@ -264,14 +369,14 @@ func main() {
 			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
 			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
 			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount),
-			strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1))), strconv.Itoa(int(item.TakenAt))})
+				strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1))), strconv.Itoa(int(item.TakenAt))})
 			if err != nil {
 				log.Println("Error writing to csv", err)
 				file, err = os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
 
 				if err != nil {
 					file, err = os.Create(*filePath)
-					if err != nil  {
+					if err != nil {
 						panic(err)
 					}
 				}
@@ -293,16 +398,21 @@ func main() {
 			log.Println("Error", err)
 		}
 
-	}, 5 + errorCounter)
+	}, 5+errorCounter)
 
 	insta.Export("~/.goinsta")
 
 	flag.Parse()
 	fs := http.FileServer(http.Dir("static"))
+	rtr := mux.NewRouter()
+	rtr.Handle("/metrics", promhttp.Handler())
+	rtr.HandleFunc("/post", handlePostData).Methods("POST")
+	rtr.HandleFunc("/post/{id}", handleRemovePost).Methods("DELETE")
+	rtr.HandleFunc("/schedule", handleGetSchedule).Methods("GET")
+	rtr.HandleFunc("/image/{id}", handleGetImage).Methods("GET")
+	rtr.HandleFunc("/user", handleUser)
+	rtr.PathPrefix("/").Handler(fs)
+	http.Handle("/", rtr)
 
-	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/post", handlePostData)
-	http.HandleFunc("/user", handleUser)
-	http.Handle("/", fs)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
