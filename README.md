@@ -1,5 +1,4 @@
-# instagram-stats
-
+# insti
 Very simple application for collecting Instagram stats (likes, comments, followers count) and post scheduler. It is still on 
 the early stage of development (frontend required a lot of attention).
 
