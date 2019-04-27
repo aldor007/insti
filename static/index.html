@@ -141,7 +141,7 @@
 		document.getElementById('upload_button').addEventListener('click', upload);
 
 	    function upload() {
-			var imgurl = cropper.getCroppedCanvas().toDataURL("image/jpeg");
+			var imgurl = cropper.getCroppedCanvas({ fillColor: '#' + $('#bgColor').val()}).toDataURL("image/jpeg");
 			var blob = dataURItoBlob(imgurl);
 
 			var formData = new FormData();
