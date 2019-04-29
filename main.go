@@ -170,7 +170,6 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 
 	publishDate = publishDate / 1000
 	tm := time.Unix(publishDate, 0)
-	timer := time.NewTimer(tm.Sub(time.Now()))
 	log.Println("Run at ", tm, " after", tm.Sub(time.Now()))
 	caption := r.PostFormValue("caption")
 	file, _, err := r.FormFile("image")
@@ -179,12 +178,9 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	imageBuf, err := ioutil.ReadAll(file)
-	var userInsta *goinsta.Instagram
-	if user == "" {
-		userInsta = insta
-	} else {
+	if user != "" {
 		var ok bool
-		userInsta, ok = users[user]
+		_, ok = users[user]
 		if !ok {
 			log.Println("Error unknown user", user)
 			http.Error(w, "Error unknown user", http.StatusBadRequest)
@@ -193,29 +189,6 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 	}
 	post := InstaPost{imageBuf: imageBuf, Caption: caption, User: user, PublishDate: tm}
 	postSchedule.Add(post)
-	go func(post InstaPost, userInsta *goinsta.Instagram) {
-		errorCounter := 0
-
-		for {
-			<-timer.C
-			if !postSchedule.Has(post.ID) {
-				return
-			}
-
-			_, err = userInsta.UploadPhoto(bytes.NewReader(post.imageBuf), caption, 100, 1)
-			if err != nil && errorCounter < 3 {
-				log.Println("image upload error", err)
-				timer = time.NewTimer(time.Minute * 2)
-				errorCounter++
-			} else {
-				log.Println("Published image")
-				postSchedule.Remove(post.ID)
-				return
-			}
-
-		}
-
-	}(post, userInsta)
 	file.Close()
 
 }
@@ -251,6 +224,62 @@ func handleGetImage(w http.ResponseWriter, r *http.Request) {
 func handleRemovePost(_ http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	postSchedule.Remove(vars["id"])
+}
+
+func publishImage(post InstaPost) {
+	errorCounter := 0
+	var userInsta *goinsta.Instagram
+	user := post.User
+	if user == "" {
+		userInsta = insta
+	} else {
+		var ok bool
+		userInsta, ok = users[user]
+		if !ok {
+			log.Println("Error unknown user", user)
+			return
+		}
+	}
+
+	for i := 0; i < 3; i++ {
+		if !postSchedule.Has(post.ID) {
+			log.Println("Skip publish", post.ID)
+			return
+		}
+
+		_, err := userInsta.UploadPhoto(bytes.NewReader(post.imageBuf), post.Caption, 100, 1)
+		if err != nil && errorCounter < 3 {
+			errorCounter++
+			log.Println("image upload error", err)
+		} else {
+			log.Println("Published image")
+			postSchedule.Remove(post.ID)
+			return
+
+		}
+	}
+}
+func postWorker(postsIn *InstaSchedule) {
+
+	ticker := time.NewTicker(time.Minute * 1)
+
+	go func() {
+		for {
+
+			select {
+			case <-ticker.C:
+				posts := postsIn.GetAll()
+				log.Println("postWorker schedule len", len(posts))
+				for _, value := range posts {
+					if time.Now().Sub(value.PublishDate).Seconds() >= 0 {
+						publishImage(value)
+					}
+				}
+
+			}
+
+		}
+	}()
 }
 
 var (
@@ -351,6 +380,7 @@ func main() {
 	}
 	csvFile := csv.NewWriter(file)
 
+	postWorker(postSchedule)
 	setInterval(func() {
 		user, err := insta.Profiles.ByName(*userName)
 
