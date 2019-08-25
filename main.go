@@ -151,6 +151,7 @@ func handleGetImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("content-type", "image/jpeg")
+	w.Header().Set("cache-control", "max-age=3600, private")
 	w.Write(post.ImageBuf)
 }
 
