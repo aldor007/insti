@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Instagram post schedule</title>
+	<style type="text/css">
+		img {
+		  max-width: 100%; /* This rule is very important, please do not ignore this! */
+		}
+		.image_container{
+			width:600px;
+			height: 500px;	
+		}
+	</style>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.min.css" />
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.1/cropper.min.js"></script>
+	<title>Schedule instagram post</title>
+	<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.css" />
+	<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-timepicker-addon/1.6.3/jquery-ui-timepicker-addon.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jscolor/2.0.4/jscolor.min.js" integrity="sha256-CJWfUCeP3jLdUMVNUll6yQx37gh9AKmXTRxvRf7jzro=" crossorigin="anonymous"></script>
+<body>
+<p><a href="/posts.html">Scheduled posts</a></p>
+<div id="toggle-aspect-ratio">
+	<span class="btn" data-value="NaN">Freeform</span>
+	<span class="btn" data-value="1">1.1</span>
+	<span class="btn" data-value="0.8">4/5</span>
+</div>
+	<input type="file" name="image" id="image" onchange="readURL(this);"/>
+	<div class="image_container">
+		<img id="insta" src="#" alt="your image" />
+	</div>
+	<p>Publish date: <input type="text" id="datepicker"></p>
+	<p>User  <select id="user">
+			<option value="">Default</option>
+		</select> <a href="/add.html">Add user</a></p>
+<p>Background color: <input class="jscolor" id="bgColor" value="fff"></p>
+	<textarea id="caption" rows="4" cols="50"></textarea>
+
+
+	<div id="cropped_result"></div>
+	<button id="crop_button">Crop</button>
+	<button id="upload_button" disabled>Upload</button>
+	<span id="info"></span>
+
+
+
+	<script type="text/javascript" defer>
+		$.ajax({
+			url:'/user',
+			type:'Get',
+			dataType: 'json',
+			success: function( json ) {
+				for (var i = 0; i < json.length; i++) {
+					$("#user").append(new Option(json[i], json[i]));
+				}
+			}
+		});
+		var options = {
+			aspectRatio: 4 / 5,
+			fillColor: '#fff'
+
+		};
+		var cropper;
+
+		function dataURItoBlob(dataURI) {
+			// convert base64/URLEncoded data component to raw binary data held in a string
+			var byteString;
+			if (dataURI.split(',')[0].indexOf('base64') >= 0)
+				byteString = atob(dataURI.split(',')[1]);
+			else
+				byteString = unescape(dataURI.split(',')[1]);
+
+			// separate out the mime component
+			var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+			// write the bytes of the string to a typed array
+			var ia = new Uint8Array(byteString.length);
+			for (var i = 0; i < byteString.length; i++) {
+				ia[i] = byteString.charCodeAt(i);
+			}
+
+			return new Blob([ia], {type:mimeString});
+		}
+
+
+		$( function() {
+			$( "#datepicker" ).datetimepicker({
+				format:'DD-MM-YYYY HH:mm:ss',
+				value: new Date()
+
+
+			});
+		} );
+		function readURL(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function (e) {
+                    $('#insta').attr('src', e.target.result)
+                };
+                reader.readAsDataURL(input.files[0]);
+                setTimeout(initCropper, 100);
+            }
+        }
+
+		$(document).on('click', '#toggle-aspect-ratio .btn', function () {
+			options.aspectRatio = $(this).attr('data-value');
+			cropper.destroy();
+			var image = document.getElementById('insta');
+			cropper = new Cropper(image, options);
+		});
+
+	    function initCropper(){
+	    	var image = document.getElementById('insta');
+			if (cropper) {
+				cropper.destroy();
+				cropper = new Cropper(image, options);
+
+			}
+			cropper = new Cropper(image, options);
+			// toggle aspect ratio after initialization
+			// On crop button clicked
+			document.getElementById('crop_button').addEventListener('click', function() {
+				var imgurl = cropper.getCroppedCanvas({ fillColor: '#' + $('#bgColor').val()}).toDataURL("image/jpeg");
+				var img = document.createElement("img");
+				img.src = imgurl;
+
+				try {
+					document.getElementById("cropped_result").removeChild(img);
+				}catch (e) {
+
+				}
+				document.getElementById("cropped_result").appendChild(img);
+
+				document.getElementById("upload_button").disabled = false;
+
+			});
+
+	    }
+		document.getElementById('upload_button').addEventListener('click', upload);
+
+	    function upload() {
+			var imgurl = cropper.getCroppedCanvas({ fillColor: '#' + $('#bgColor').val()}).toDataURL("image/jpeg");
+			var blob = dataURItoBlob(imgurl);
+
+			var formData = new FormData();
+			formData.append('image', blob);
+			var dateObject = $("#datepicker").datepicker("getDate");
+			var dateString = $.datepicker.formatDate("@", dateObject);
+			formData.append('publishDate', dateString);
+			formData.append('caption', $('#caption').val());
+			formData.append('user', $('#user option:selected').val());
+			console.info(formData.get("image"));
+			// Use `jQuery.ajax` method
+			$.ajax('/post', {
+				method: "POST",
+				data: formData,
+				processData: false,
+				contentType: false,
+				cache: false,
+				success: function () {
+
+					console.log('Upload success');
+					$('#info').text("Upload success");
+				},
+				error: function () {
+					console.log('Upload error');
+					$('#info').text("Upload error");
+				}
+				// });
+			});
+		}
+	</script>
+</body>
+</html>

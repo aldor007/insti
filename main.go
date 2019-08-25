@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/md5"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,6 +10,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/aldor007/insti/storage"
+
 
 	"io/ioutil"
 	"log"
@@ -23,85 +23,11 @@ import (
 	"time"
 )
 
-type MediaData struct {
-	likes         int
-	commentsCount int
-}
-
-type InstaData struct {
-	data map[string]MediaData
-	lock sync.RWMutex
-}
-
-type InstaPost struct {
-	imageBuf    []byte
-	PublishDate time.Time `json:"publishDate"`
-	Caption     string    `json:"caption"`
-	ID          string    `json:"id"`
-	User        string    `json:"user"`
-}
-
-func (i *InstaPost) MarshalJSON() ([]byte, error) {
-	type Alias InstaPost
-	return json.Marshal(&struct {
-		*Alias
-		PublisDate string `json:"publishDate"`
-	}{
-		Alias:      (*Alias)(i),
-		PublisDate: i.PublishDate.Format(time.RFC1123),
-	})
-}
-
-type InstaSchedule struct {
-	schedule map[string]InstaPost
-	lock     sync.RWMutex
-}
-
-func NewInstaSchedule() *InstaSchedule {
-	s := InstaSchedule{}
-	s.schedule = make(map[string]InstaPost)
-	return &s
-}
-
-func (i *InstaSchedule) Add(post InstaPost) {
-	lock.Lock()
-	defer lock.Unlock()
-	h := md5.New()
-	h.Write(post.imageBuf)
-	post.ID = hex.EncodeToString(h.Sum(nil))
-	i.schedule[post.ID] = post
-}
-
-func (i *InstaSchedule) Remove(id string) {
-	lock.Lock()
-	defer lock.Unlock()
-	delete(i.schedule, id)
-}
-
-func (i *InstaSchedule) Get(id string) InstaPost {
-	lock.RLock()
-	defer lock.RUnlock()
-	return i.schedule[id]
-}
-
-func (i *InstaSchedule) GetAll() map[string]InstaPost {
-	lock.RLock()
-	defer lock.RUnlock()
-	return i.schedule
-}
-
-func (i *InstaSchedule) Has(id string) bool {
-	lock.RLock()
-	defer lock.RUnlock()
-	_, ok := i.schedule[id]
-	return ok
-}
-
 var lock sync.RWMutex
 
 var insta *goinsta.Instagram
 var users map[string]*goinsta.Instagram
-var postSchedule *InstaSchedule
+var postSchedule *storage.InstaSchedule
 
 func handleNewUser(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
@@ -187,8 +113,14 @@ func handlePostData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	post := InstaPost{imageBuf: imageBuf, Caption: caption, User: user, PublishDate: tm}
-	postSchedule.Add(post)
+	post := storage.NewInstaPost(user, caption, r.PostFormValue("location"), tm, imageBuf)
+	err = postSchedule.Set(post)
+	if err != nil {
+		log.Println("Unable to store image", err)
+		http.Error(w, "image save error", http.StatusInternalServerError)
+		return
+
+	}
 	file.Close()
 
 }
@@ -197,12 +129,12 @@ func handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("content-type", "application/json")
 	data := postSchedule.GetAll()
-	list := make([]InstaPost, 0)
+	list := make([]storage.InstaPost, 0)
 	for _, v := range data {
 		list = append(list, v)
 	}
 
-	jsonData := make(map[string][]InstaPost)
+	jsonData := make(map[string][]storage.InstaPost)
 	jsonData["data"] = list
 	d, _ := json.Marshal(jsonData)
 	w.Write(d)
@@ -211,14 +143,15 @@ func handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 
 func handleGetImage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	post := postSchedule.Get(vars["id"])
-	if post.imageBuf == nil {
+	post, err := postSchedule.Get(vars["id"])
+	if post.ImageBuf == nil || err != nil {
+		log.Println("Error getting image", err)
 		http.Error(w, "No image", http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("content-type", "image/jpeg")
-	w.Write(post.imageBuf)
+	w.Write(post.ImageBuf)
 }
 
 func handleRemovePost(_ http.ResponseWriter, r *http.Request) {
@@ -226,7 +159,7 @@ func handleRemovePost(_ http.ResponseWriter, r *http.Request) {
 	postSchedule.Remove(vars["id"])
 }
 
-func publishImage(post InstaPost) {
+func publishImage(post storage.InstaPost) {
 	errorCounter := 0
 	var userInsta *goinsta.Instagram
 	user := post.User
@@ -247,11 +180,12 @@ func publishImage(post InstaPost) {
 			return
 		}
 
-		_, err := userInsta.UploadPhoto(bytes.NewReader(post.imageBuf), post.Caption, 100, 1)
+		item, err := userInsta.UploadPhoto(bytes.NewReader(post.ImageBuf), post.Caption, 100, 1)
 		if err != nil && errorCounter < 3 {
 			errorCounter++
 			log.Println("image upload error", err)
 		} else {
+			item.Location.City = post.Location
 			log.Println("Published image")
 			postSchedule.Remove(post.ID)
 			return
@@ -259,7 +193,7 @@ func publishImage(post InstaPost) {
 		}
 	}
 }
-func postWorker(postsIn *InstaSchedule) {
+func postWorker(postsIn *storage.InstaSchedule) {
 
 	ticker := time.NewTicker(time.Minute * 1)
 
@@ -341,11 +275,12 @@ func setInterval(someFunc func(), minutes int) chan bool {
 func main() {
 	addr := flag.String("listen", ":8080", "The address to listen on for HTTP requests.")
 	userName := flag.String("user", "", "User name to observe")
-	filePath := flag.String("csvPath", "", "CSV file path")
+	csvFilePath := flag.String("csvPath", "", "CSV file path")
+	dbPath := flag.String("dbPath", "./data", "CSV file path")
 	flag.Parse()
 
 	users = make(map[string]*goinsta.Instagram)
-	postSchedule = NewInstaSchedule()
+	postSchedule = storage.NewInstaSchedule(*dbPath)
 
 	if userName == nil || *userName == "" {
 		panic("Missing required parameter")
@@ -370,10 +305,10 @@ func main() {
 	}
 	errorCounter := 0
 
-	file, err := os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(*csvFilePath, os.O_APPEND|os.O_WRONLY, 0600)
 
 	if err != nil {
-		file, err = os.Create(*filePath)
+		file, err = os.Create(*csvFilePath)
 		if err != nil {
 			panic(err)
 		}
@@ -402,10 +337,10 @@ func main() {
 				strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1))), strconv.Itoa(int(item.TakenAt))})
 			if err != nil {
 				log.Println("Error writing to csv", err)
-				file, err = os.OpenFile(*filePath, os.O_APPEND|os.O_WRONLY, 0600)
+				file, err = os.OpenFile(*csvFilePath, os.O_APPEND|os.O_WRONLY, 0600)
 
 				if err != nil {
-					file, err = os.Create(*filePath)
+					file, err = os.Create(*csvFilePath)
 					if err != nil {
 						panic(err)
 					}

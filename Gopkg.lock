@@ -86,6 +86,22 @@
   pruneopts = "UT"
   revision = "f8d8b3f739bd91a7c0462cb55235ef63c79c9abc"
 
+[[projects]]
+  digest = "1:f2ac2c724fc8214bb7b9dd6d4f5b7a983152051f5133320f228557182263cb94"
+  name = "go.etcd.io/bbolt"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "a0458a2b35708eef59eb5f620ceb3cd1c01a824d"
+  version = "v1.3.3"
+
+[[projects]]
+  branch = "master"
+  digest = "1:47844666be86089349a441f5f0ece22f42a87a8cb8c9a31294c593f43209ad19"
+  name = "golang.org/x/sys"
+  packages = ["unix"]
+  pruneopts = "UT"
+  revision = "fb81701db80f1745f51259b1f286de3fe2ec80c8"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -94,6 +110,7 @@
     "github.com/gorilla/mux",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
+    "go.etcd.io/bbolt",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
