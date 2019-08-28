@@ -43,6 +43,7 @@ func NewInstaPost(user, caption, location string, publishDate time.Time, buf []b
 
 	h := md5.New()
 	h.Write(buf)
+	h.Write([]byte(user))
 	i.ID = hex.EncodeToString(h.Sum(nil))
 	return i
 }
@@ -67,7 +68,7 @@ func (i *instaPost) PublicInsta() InstaPost {
 }
 
 func newInternalInstaPost(post InstaPost) instaPost {
-	return instaPost{User:post.User, Caption: post.Caption, Location: post.Location, PublishDate: post.PublishDate, ImageBuf: post.ImageBuf}
+	return instaPost{ID: post.ID, User:post.User, Caption: post.Caption, Location: post.Location, PublishDate: post.PublishDate, ImageBuf: post.ImageBuf}
 }
 
 type InstaSchedule struct {
@@ -109,6 +110,7 @@ func (i *InstaSchedule) Set(post InstaPost) error {
 		return err
 	}
 
+	log.Println("Storing post with ID", post.ID)
 	i.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(i.boltBucketName)
 		return bucket.Put([]byte(post.ID), buf)
@@ -152,7 +154,10 @@ func (i *InstaSchedule) GetAll() map[string]InstaPost {
 
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			p := instaPost{}
-			json.Unmarshal(v, &p)
+			err := json.Unmarshal(v, &p)
+			if err != nil {
+				log.Println("Error Unmarshal", err)
+			}
 			res[p.ID] = p.PublicInsta()
 		}
 
