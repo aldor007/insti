@@ -185,6 +185,7 @@ func publishImage(post storage.InstaPost) {
 		if err != nil && errorCounter < 3 {
 			errorCounter++
 			log.Println("image upload error", err)
+			time.Sleep(time.Minute * 5)
 		} else {
 			item.Location.City = post.Location
 			log.Println("Published image")
