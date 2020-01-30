@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/ahmdrz/goinsta"
+	"github.com/aldor007/goinsta"
+	"github.com/aldor007/insti/storage"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/aldor007/insti/storage"
-
 
 	"io/ioutil"
 	"log"
