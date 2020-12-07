@@ -2,15 +2,15 @@ package main
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/aldor007/goinsta"
+	"github.com/TheForgotten69/goinsta/v2"
 	"github.com/aldor007/insti/storage"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/jasonlvhit/gocron"
 
 	"io/ioutil"
 	"log"
@@ -27,6 +27,9 @@ var lock sync.RWMutex
 var insta *goinsta.Instagram
 var users map[string]*goinsta.Instagram
 var postSchedule *storage.InstaSchedule
+var followersStore map[string]struct{}
+var unfollowers []string
+var prevFollowCount int
 
 func handleNewUser(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
@@ -154,6 +157,17 @@ func handleGetImage(w http.ResponseWriter, r *http.Request) {
 	w.Write(post.ImageBuf)
 }
 
+func handleFollowers(w http.ResponseWriter, r *http.Request) {
+	unfollowersStr, _ := json.Marshal(unfollowers)
+	followersArr := make([]string, 0)
+	for f, _ := range followersStore {
+		followersArr = append(followersArr, f)
+	}
+	followerStr, _ := json.Marshal(followersArr)
+	res := fmt.Sprintf("Followers %s recent unfollows %s", string(followerStr), string(unfollowersStr))
+	fmt.Fprint(w, res)
+}
+
 func handleRemovePost(_ http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	postSchedule.Remove(vars["id"])
@@ -272,101 +286,129 @@ func setInterval(someFunc func(), minutes int) chan bool {
 	return clear
 
 }
+func collectStats(userName *string,  ) {
+	user, err := insta.Profiles.ByName(*userName)
+
+	if err != nil {
+		log.Println("Error getting user", err)
+		errorsMonitoring.Inc()
+		return
+	}
+
+	followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
+	media := user.Feed()
+	media.Next()
+	for _, item := range media.Items {
+		likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
+		commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
+	}
+	err = user.Sync()
+	if err != nil {
+		log.Println("Sync error", err)
+	}
+
+	if err != nil {
+		log.Println("Error", err)
+	}
+}
+
+func collectFollowers(userName *string) {
+	user, err := insta.Profiles.ByName(*userName)
+	if err != nil {
+		log.Println("Error getting user", err)
+		errorsMonitoring.Inc()
+		return
+	}
+	err = user.Sync()
+	if err != nil {
+		log.Println("Sync error", err)
+	}
+	currentFollowers := make([]string, 0)
+
+	followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
+	followers := user.Followers()
+	if user.FollowerCount == prevFollowCount {
+		return
+	}
+	log.Println("current followers", user.FollowerCount, prevFollowCount)
+	prevFollowCount = user.FollowerCount
+	log.Println(followers.PageSize, len(followers.Users))
+	followers.Next()
+	for _, u := range followers.Users {
+		currentFollowers = append(currentFollowers, u.Username)
+		log.Println("Adding", u.Username)
+	}
+	for followers.Next() {
+		for _, u := range followers.Users {
+			currentFollowers = append(currentFollowers, u.Username)
+			log.Println("Adding", u.Username)
+		}
+	}
+
+	log.Println("Checking current followers")
+	for _, u := range currentFollowers {
+		if _, ok := followersStore[u]; !ok {
+			followersStore[u] = struct{}{}
+			log.Println("User added to follower store", u)
+		}
+	}
+
+	for  uInStore, _ := range followersStore {
+		found := false
+		for _, u := range currentFollowers {
+			if uInStore == u {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			log.Println("User unfollow", uInStore)
+			unfollowers = append(unfollowers, uInStore)
+			delete(followersStore, uInStore)
+		}
+	}
+
+}
 
 func main() {
 	addr := flag.String("listen", ":8080", "The address to listen on for HTTP requests.")
 	userName := flag.String("user", "", "User name to observe")
-	csvFilePath := flag.String("csvPath", "", "CSV file path")
 	dbPath := flag.String("dbPath", "./data", "CSV file path")
 	flag.Parse()
 
 	users = make(map[string]*goinsta.Instagram)
+	followersStore = make(map[string]struct{})
+	unfollowers = make([]string, 0)
 	postSchedule = storage.NewInstaSchedule(*dbPath)
 
 	if userName == nil || *userName == "" {
-		panic("Missing required parameter")
+		panic("Missing required parameter username")
 	}
 
 	if os.Getenv("INSTA_USERNAME") == "" || os.Getenv("INSTA_PASSWORD") == "" {
-		panic("Missing env variables")
+		panic("Missing env variables with insta user/password for collect user")
 	}
 
 	log.Println("Collecting data for ", *userName)
 	log.Println("Server listen", *addr)
 	prometheus.MustRegister(followersCount, likesCount, commentsCount, errorsMonitoring)
 	var err error
-	insta, err = goinsta.Import("~/.goinsta2")
+	insta, err = goinsta.Import(".goinsta")
 	if err != nil {
 		insta = goinsta.New(os.Getenv("INSTA_USERNAME"), os.Getenv("INSTA_PASSWORD"))
-	}
-
-	if err := insta.Login(); err != nil {
-		log.Println("login error", err)
-		return
-	}
-	errorCounter := 0
-
-	file, err := os.OpenFile(*csvFilePath, os.O_APPEND|os.O_WRONLY, 0600)
-
-	if err != nil {
-		file, err = os.Create(*csvFilePath)
-		if err != nil {
-			panic(err)
-		}
-	}
-	csvFile := csv.NewWriter(file)
-
-	postWorker(postSchedule)
-	setInterval(func() {
-		user, err := insta.Profiles.ByName(*userName)
-
-		if err != nil {
-			log.Println("Error getting user", err)
-			errorsMonitoring.Inc()
-			errorCounter++
+		if err := insta.Login(); err != nil {
+			log.Println("login error", err)
 			return
 		}
+	}
 
-		followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
-		media := user.Feed()
-		media.Next()
-		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-		for _, item := range media.Items {
-			likesCount.WithLabelValues(item.Code).Set(float64(item.Likes))
-			commentsCount.WithLabelValues(item.Code).Set(float64(item.CommentCount))
-			err = csvFile.Write([]string{timestamp, item.Code, strconv.Itoa(item.Likes), strconv.Itoa(item.CommentCount), strconv.Itoa(user.FollowerCount),
-				strconv.Itoa(len(item.Caption.Text)), strconv.Itoa(len(tagRegexp.FindAllStringIndex(item.Caption.Text, -1))), strconv.Itoa(int(item.TakenAt))})
-			if err != nil {
-				log.Println("Error writing to csv", err)
-				file, err = os.OpenFile(*csvFilePath, os.O_APPEND|os.O_WRONLY, 0600)
+	insta.Export(".goinsta")
 
-				if err != nil {
-					file, err = os.Create(*csvFilePath)
-					if err != nil {
-						panic(err)
-					}
-				}
-				csvFile = csv.NewWriter(file)
-			}
-		}
-		err = user.Sync()
-		if err != nil {
-			log.Println("Sync error", err)
-			errorCounter++
-		}
-
-		if errorCounter > 4 {
-			errorCounter = 0
-		}
-
-		csvFile.Flush()
-		if err != nil {
-			log.Println("Error", err)
-		}
-
-	}, 5+errorCounter)
-
-	insta.Export("~/.goinsta")
+	collectFollowers(userName)
+	//gocron.Every(1).Hours().Do(collectStats, userName)
+	gocron.Every(7).Hours().Do(collectFollowers, userName)
+	go gocron.Start()
 
 	flag.Parse()
 	fs := http.FileServer(http.Dir("static"))
@@ -377,6 +419,7 @@ func main() {
 	rtr.HandleFunc("/schedule", handleGetSchedule).Methods("GET")
 	rtr.HandleFunc("/image/{id}", handleGetImage).Methods("GET")
 	rtr.HandleFunc("/user", handleUser)
+	rtr.HandleFunc("/followers", handleFollowers)
 	rtr.PathPrefix("/").Handler(fs)
 	http.Handle("/", rtr)
 
