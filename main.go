@@ -391,12 +391,12 @@ func main() {
 	if os.Getenv("INSTA_USERNAME") == "" || os.Getenv("INSTA_PASSWORD") == "" {
 		panic("Missing env variables with insta user/password for collect user")
 	}
-
+	permStore := os.Getenv("INSTA_DATA_PATH")
 	log.Println("Collecting data for ", *userName)
 	log.Println("Server listen", *addr)
 	prometheus.MustRegister(followersCount, likesCount, commentsCount, errorsMonitoring)
 	var err error
-	insta, err = goinsta.Import(".goinsta")
+	insta, err = goinsta.Import(permStore + ".goinsta")
 	if err != nil {
 		insta = goinsta.New(os.Getenv("INSTA_USERNAME"), os.Getenv("INSTA_PASSWORD"))
 		if err := insta.Login(); err != nil {
@@ -405,7 +405,7 @@ func main() {
 		}
 	}
 
-	insta.Export(".goinsta")
+	insta.Export(permStore + ".goinsta")
 
 	collectFollowers(userName)
 	//gocron.Every(1).Hours().Do(collectStats, userName)
