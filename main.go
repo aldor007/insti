@@ -164,7 +164,7 @@ func handleFollowers(w http.ResponseWriter, r *http.Request) {
 		followersArr = append(followersArr, f)
 	}
 	followerStr, _ := json.Marshal(followersArr)
-	res := fmt.Sprintf("Followers %s recent unfollows %s", string(followerStr), string(unfollowersStr))
+	res := fmt.Sprintf("Followers count %d followers %s recent unfollows %s", prevFollowCount, string(followerStr), string(unfollowersStr))
 	fmt.Fprint(w, res)
 }
 
@@ -330,22 +330,22 @@ func collectFollowers(userName *string) {
 	if user.FollowerCount == prevFollowCount {
 		return
 	}
+
 	log.Println("current followers", user.FollowerCount, prevFollowCount)
 	prevFollowCount = user.FollowerCount
 	log.Println(followers.PageSize, len(followers.Users))
 	followers.Next()
 	for _, u := range followers.Users {
 		currentFollowers = append(currentFollowers, u.Username)
-		log.Println("Adding", u.Username)
 	}
 	for followers.Next() {
 		for _, u := range followers.Users {
 			currentFollowers = append(currentFollowers, u.Username)
-			log.Println("Adding", u.Username)
+			log.Println("Adding2", u.Username)
 		}
 	}
 
-	log.Println("Checking current followers")
+	log.Println("Checking current followers checker", len(currentFollowers))
 	for _, u := range currentFollowers {
 		if _, ok := followersStore[u]; !ok {
 			followersStore[u] = struct{}{}
@@ -353,11 +353,13 @@ func collectFollowers(userName *string) {
 		}
 	}
 
+
 	for  uInStore, _ := range followersStore {
 		found := false
 		for _, u := range currentFollowers {
 			if uInStore == u {
 				found = true
+				log.Println("User found in store", uInStore)
 				break
 			}
 		}
