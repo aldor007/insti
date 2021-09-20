@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/TheForgotten69/goinsta/v2"
+	"github.com/Davincible/goinsta"
 	"github.com/aldor007/insti/storage"
 	"github.com/gorilla/mux"
+	"github.com/jasonlvhit/gocron"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/jasonlvhit/gocron"
 
 	"io/ioutil"
 	"log"
@@ -194,7 +194,24 @@ func publishImage(post storage.InstaPost) {
 			return
 		}
 
-		item, err := userInsta.UploadPhoto(bytes.NewReader(post.ImageBuf), post.Caption, 100, 1)
+		up := &goinsta.UploadOptions{
+			File:                 bytes.NewReader(post.ImageBuf),
+			Thumbnail:            nil,
+			Album:                nil,
+			Caption:              post.Caption,
+			IsStory:              false,
+			IsIGTV:               false,
+			Title:                post.Caption,
+			IGTVPreview:          false,
+			MuteAudio:            false,
+			DisableComments:      false,
+			DisableLikeViewCount: false,
+			DisableSubtitles:     false,
+			UserTags:             nil,
+			AlbumTags:            nil,
+			Location:             nil,
+		}
+		item, err := userInsta.Upload(up)
 		if err != nil && errorCounter < 3 {
 			errorCounter++
 			log.Println("image upload error", err)
@@ -312,7 +329,7 @@ func collectStats(userName *string,  ) {
 	}
 }
 
-func collectFollowers(userName *string) {
+func collectFollowers(userName string) {
 	user, err := insta.Profiles.ByName(*userName)
 	if err != nil {
 		log.Println("Error getting user", err)
@@ -325,7 +342,7 @@ func collectFollowers(userName *string) {
 	}
 	currentFollowers := make([]string, 0)
 
-	followersCount.WithLabelValues(*userName).Set(float64(user.FollowerCount))
+	followersCount.WithLabelValues(userName).Set(float64(user.FollowerCount))
 	followers := user.Followers()
 	if user.FollowerCount == prevFollowCount {
 		return
@@ -375,7 +392,7 @@ func collectFollowers(userName *string) {
 
 func main() {
 	addr := flag.String("listen", ":8080", "The address to listen on for HTTP requests.")
-	userName := flag.String("user", "", "User name to observe")
+	userName := os.Getenv("USER_TO_OBSERV")
 	dbPath := flag.String("dbPath", "./data", "CSV file path")
 	flag.Parse()
 
@@ -384,7 +401,7 @@ func main() {
 	unfollowers = make([]string, 0)
 	postSchedule = storage.NewInstaSchedule(*dbPath)
 
-	if userName == nil || *userName == "" {
+	if  userName == "" {
 		panic("Missing required parameter username")
 	}
 
@@ -392,7 +409,7 @@ func main() {
 		panic("Missing env variables with insta user/password for collect user")
 	}
 	permStore := os.Getenv("INSTA_DATA_PATH")
-	log.Println("Collecting data for ", *userName)
+	log.Println("Collecting data for ", userName)
 	log.Println("Server listen", *addr)
 	prometheus.MustRegister(followersCount, likesCount, commentsCount, errorsMonitoring)
 	var err error
