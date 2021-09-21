@@ -330,7 +330,7 @@ func collectStats(userName *string,  ) {
 }
 
 func collectFollowers(userName string) {
-	user, err := insta.Profiles.ByName(*userName)
+	user, err := insta.Profiles.ByName(userName)
 	if err != nil {
 		log.Println("Error getting user", err)
 		errorsMonitoring.Inc()
