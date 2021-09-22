@@ -241,7 +241,8 @@ func postWorker(postsIn *storage.InstaSchedule) {
 						publishImage(value)
 					}
 				}
-
+			default:
+				time.Sleep(1 * time.Second)
 			}
 
 		}
@@ -428,6 +429,7 @@ func main() {
 	//gocron.Every(1).Hours().Do(collectStats, userName)
 	gocron.Every(7).Hours().Do(collectFollowers, userName)
 	go gocron.Start()
+	go postWorker(postSchedule)
 
 	flag.Parse()
 	fs := http.FileServer(http.Dir("static"))
