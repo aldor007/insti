@@ -133,6 +133,7 @@ func handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 	data := postSchedule.GetAll()
 	list := make([]storage.InstaPost, 0)
 	for _, v := range data {
+		v.ImageBuf = nil
 		list = append(list, v)
 	}
 

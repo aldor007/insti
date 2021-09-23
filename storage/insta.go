@@ -4,10 +4,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	bolt "go.etcd.io/bbolt"
 	"log"
 	"sync"
 	"time"
-	bolt "go.etcd.io/bbolt"
 )
 
 type MediaData struct {
@@ -64,11 +64,11 @@ func (i *instaPost) Serialize() ([]byte, error) {
 }
 
 func (i *instaPost) PublicInsta() InstaPost {
-	return NewInstaPost(i.User, i.Caption, i.Location, i.PublishDate, i.ImageBuf)
+	return NewInstaPost(i.User, i.Caption, i.Location, i.PublishDate, i.ImageBuf )
 }
 
 func newInternalInstaPost(post InstaPost) instaPost {
-	return instaPost{ID: post.ID, User:post.User, Caption: post.Caption, Location: post.Location, PublishDate: post.PublishDate, ImageBuf: post.ImageBuf}
+	return instaPost{ID: post.ID, User:post.User, Caption: post.Caption, Location: post.Location, PublishDate: post.PublishDate, ImageBuf: post.ImageBuf }
 }
 
 type InstaSchedule struct {
