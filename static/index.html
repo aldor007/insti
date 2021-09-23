@@ -36,7 +36,8 @@
 			<option value="">Default</option>
 		</select> <a href="/add.html">Add user</a></p>
 <p>Background color: <input class="jscolor" id="bgColor" value="fff"></p>
-	<textarea id="caption" rows="4" cols="50"></textarea>
+<p>Location <input type="text" id="location"></p>
+<textarea id="caption" rows="4" cols="50"></textarea>
 
 
 	<div id="cropped_result"></div>
@@ -151,6 +152,7 @@
 			formData.append('publishDate', dateString);
 			formData.append('caption', $('#caption').val());
 			formData.append('user', $('#user option:selected').val());
+			formData.append('location', $('#location').val());
 			console.info(formData.get("image"));
 			// Use `jQuery.ajax` method
 			$.ajax('/post', {

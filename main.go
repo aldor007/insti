@@ -153,7 +153,7 @@ func handleGetImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("content-type", "image/jpeg")
-	w.Header().Set("cache-control", "max-age=3600, private")
+	w.Header().Set("cache-control", "max-age=3600, public")
 	w.Write(post.ImageBuf)
 }
 
@@ -187,7 +187,18 @@ func publishImage(post storage.InstaPost) {
 			return
 		}
 	}
+	var location *goinsta.Location
+	if post.Location != "" {
+		results, err := insta.Searchbar.SearchLocation("Chicago")
+		if err != nil || len(results.Places) == 0 {
+			log.Println("Unable to get location")
+		} else {
 
+			location = results.Places[1].Location
+			results.RegisterLocationClick(location)
+
+		}
+	}
 	for i := 0; i < 3; i++ {
 		if !postSchedule.Has(post.ID) {
 			log.Println("Skip publish", post.ID)
@@ -201,7 +212,6 @@ func publishImage(post storage.InstaPost) {
 			Caption:              post.Caption,
 			IsStory:              false,
 			IsIGTV:               false,
-			Title:                post.Caption,
 			IGTVPreview:          false,
 			MuteAudio:            false,
 			DisableComments:      false,
@@ -209,8 +219,12 @@ func publishImage(post storage.InstaPost) {
 			DisableSubtitles:     false,
 			UserTags:             nil,
 			AlbumTags:            nil,
-			Location:             nil,
 		}
+
+		if location != nil {
+			up.Location = location.NewPostTag()
+		}
+
 		item, err := userInsta.Upload(up)
 		if err != nil && errorCounter < 3 {
 			errorCounter++
